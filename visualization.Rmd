@@ -1,0 +1,156 @@
+---
+title: "kable() and ggplot()"
+author: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+
+pacman::p_load(
+  AER,
+  tidyverse,
+  lubridate,
+  kableExtra,
+  modelsummary,
+  skimr,
+  scales
+)
+```
+
+## kable() tables
+##Example 1
+```{r data for kbl}
+# create object `cps` from downloaded data.
+cps <- read_tsv("https://www.ssc.wisc.edu/~bhansen/econometrics/cps09mar.txt", col_names = FALSE) 
+# name the variables
+names(cps) <- c("age","female","hisp","education","earnings","hours","weeks","union","uncov","region","race","marital")
+```
+
+```{r some data management}
+
+df <- cps %>% 
+  mutate(
+    educ_fct = case_when( 
+      education <  12                  ~ "Drop Out",
+      education == 12                  ~ "High School",
+      education >  12 & education < 16 ~ "Some Post Secondary",
+      education == 16                  ~ "College",
+      education >  16                  ~ "Grad. Degree"
+      ) %>% as.factor()
+  ) %>% 
+mutate(educ_fct = fct_relevel(educ_fct, c("Drop Out", "High School", "Some Post Secondary", "College", "Grad. Degree")))
+
+```
+
+```{r}
+# As variable `female` is currently binary, we create a new variable called `Gender` that is a factor with levels "Men" and "Women".
+df <- df %>% 
+  mutate(Gender = ifelse(female == 1, "Women", "Men" ) %>% factor(), 
+         wage = earnings / (weeks * hours))
+         
+tbl <- df %>% 
+  group_by(educ_fct, Gender) %>% 
+  summarise(Wages = mean(wage, na.rm = T),
+            Weeks = mean(weeks, na.rm = T),
+            Hours = mean(hours, na.rm = T))
+
+tbl <- tbl %>% 
+  pivot_wider(names_from = Gender, 
+              values_from = -c(educ_fct,
+                               Gender))
+
+#To view table "tbl".
+kbl(tbl,
+    caption = "Wages by Education and Genders",
+    col.names = c("Education","Wages","Weeks","Hours","Wages","Weeks","Hours"),
+    digits = 3) %>% 
+      kable_classic_2() %>% 
+      add_header_above(c(" "= 1,"Men" = 3,"Women" = 3))
+ 
+```
+
+##Example 2: Visualizing covid cases per day in Canada using ggplot()
+```{r}
+## load data
+confirmed <-  read_csv('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv')
+```
+
+```{r}
+df <- confirmed %>% 
+  rename(Province = 1,
+         Country = 2) %>% 
+  filter(Country == "Canada",
+         !Province %in% c("Diamond Princess","Grand Princess", "Repatriated Travellers", "Northwest Territories", "Nunavut","Yukon")
+         )
+
+df <- df %>% 
+  pivot_longer(values_to = "cases",
+               cols = -c("Province","Country", "Lat","Long"),
+               names_to = "date")
+  
+df <- df %>% 
+  mutate(date = lubridate::mdy(date)) %>% 
+  filter(date >= "2020-03-01") %>% 
+  group_by(Province) %>% 
+  arrange(date) %>% 
+  mutate(new_cases = cases - lag(cases))
+
+```
+
+```{r}
+library(tidyquant)
+ggplot(df,
+       aes(y = new_cases,
+           x = date)) +
+  geom_col(color = "magenta", alpha = 0.5) +
+  facet_wrap(~Province,
+           scales = "free") +
+  geom_ma(n=7) +
+  labs(
+    y = "New Cases",
+    x = "Date",
+    title = "Covid Cases per Day:Canada")
+    
+```
+
+
+#We rename the 1st column into "Province" and 2nd column into "Country", and we pivot then data so that there is a new variable "cases" which is covid case counts per day.
+
+```{r}
+df <- confirmed %>%
+  rename(Province = 1, Country = 2) %>%
+  pivot_longer(values_to = "cases",
+                cols = -c("Province", "Country","Lat","Long"),
+               names_to = "date") %>%
+  mutate(date = lubridate::mdy(date)) %>% 
+  group_by(Country, date) %>% 
+  summarise(cases = sum(cases, na.rm=T)) %>% 
+  filter(cases > 50) %>%
+  group_by(Country) %>% 
+  mutate(days = row_number())
+
+df2 <- df %>% 
+  filter(Country %in% c("Canada", "Portugal", "US", "United Kingdom", "Turkey"))
+
+```
+```{r}
+ggplot(df,
+       aes(y = cases,
+           x = days,
+           group = Country)) +
+  geom_line(color = "grey",
+            alpha = 0.5) +
+  geom_line(
+    data = df2,
+    mapping = aes(y = cases,
+                  x = days,
+                  color = Country)
+  ) +
+  scale_y_log10()
+
+```

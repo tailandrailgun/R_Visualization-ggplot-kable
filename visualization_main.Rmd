@@ -1,0 +1,124 @@
+---
+title: "Comparison of Means and Potential Outcomes : RCM model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# knitr globals
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.pos = "H",
+	warning = FALSE,
+	message = FALSE
+)
+# Set the graphical theme
+ggplot2::theme_set(ggplot2::theme_light())
+
+# clear workspace
+#rm(list=ls())
+
+library(tidyverse)
+library(estimatr)
+library(AER)
+library(kableExtra)
+library(modelsummary)
+library(stargazer)
+library(haven)
+library(skimr)
+```
+
+```{r}
+# experimental data
+nsw <- read_dta("http://www.nber.org/~rdehejia/data/nsw.dta")
+
+# non experimental
+cps <- read_dta("http://www.nber.org/~rdehejia/data/cps_controls2.dta")
+```
+
+## Experimental Data 
+```{r}
+Y_1 <- mean(nsw$re78[nsw$treat == 1],na.rm=T)
+Y_1 <- nsw %>% 
+  filter(treat ==1) %>% 
+  pull(re78) %>% 
+  mean(., na.rm=T)
+
+df1 <- nsw %>% 
+  filter(treat == 0)
+```
+```{r}
+Y_1 <- mean(nsw$re78[nsw$treat == 1],na.rm=T)
+Y_0 <- mean(nsw$re78[nsw$treat == 0],na.rm=T)
+Delta <- Y_1 - Y_0
+
+varY_1 <- var(nsw$re78[nsw$treat == 1],na.rm=T)
+varY_0 <- var(nsw$re78[nsw$treat == 0],na.rm=T)
+
+N_1 <- sum(nsw$treat==1)
+N_0 <- sum(nsw$treat==0)
+
+t <- Delta / sqrt(varY_1/N_1 + varY_0/N_0)
+t 
+```
+```{r}
+t.test(re78 ~ treat, data = nsw)
+```
+```{r}
+lm(re78 ~ treat, data = nsw) %>% 
+  coeftest(., sandwich)
+```
+```{r}
+models <- list(
+  lm(re78 ~ treat, data = nsw),
+  lm(re78 ~ treat + education + nodegree + age , data = nsw),
+  lm(re78 ~ treat + education + nodegree + age + married + black, data = nsw)
+  )
+
+modelsummary(models,
+             vcov = "robust",
+             stars = T) %>% 
+  kable_classic_2()
+```
+```{r}
+modelplot(models)
+```
+```{r}
+datasummary_balance(~treat, 
+                    data = nsw,
+                    dinm = TRUE,
+                    dinm_statistic = "p.value"
+                    )
+
+# estimatr package is used for the statistics "difference in means" and "p value".
+```
+
+## Non-Experimental Data
+```{r}
+df <- nsw %>% 
+  filter(treat == 1)
+
+df <- bind_rows(df, cps %>% select(-re74))
+```
+```{r}
+datasummary_balance(~treat, 
+                    data = df,
+                    dinm = TRUE,
+                    dinm_statistic = "p.value"
+                    )
+```
+```{r}
+models <- list(
+  lm(re78 ~ treat, data = df),
+  lm(re78 ~ treat + education + nodegree + age , data = df),
+  lm(re78 ~ treat + education + nodegree + age + married + black, data = df)
+  )
+
+modelsummary(models,
+             vcov = "robust",
+             stars = T) %>% 
+  kable_classic_2()
+```
+```{r}
+modelplot(models)
+```
+
